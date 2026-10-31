@@ -1,5 +1,3 @@
-"""MCTS: repete seleção, expansão, simulação e retropropagação."""
-
 import math
 import random
 import time
@@ -7,17 +5,25 @@ import time
 from src.mcts.node import No
 
 
-def selecionar(raiz, c):
+def selecionar(raiz, peso_exploracao):
     """Parte da raiz e desce até um nó que possa ser expandido ou seja folha.
 
     Enquanto todas as jogadas do nó já foram tentadas, escolhe o filho com
-    maior pontuação UCT. A pontuação soma taxa de vitórias e um bônus para
-    filhos pouco visitados; `c` controla o peso desse bônus.
+    maior pontuação UCT. Ela soma a taxa de vitórias e um bônus baseado nas
+    visitas do nó atual e do filho; `peso_exploracao` controla esse bônus.
+
+    @param raiz: Nó onde começa a seleção.
+    @param peso_exploracao: Peso do bônus de exploração na pontuação UCT.
+    @return: Nó que pode ser expandido ou folha da árvore.
     """
     def pontuacao_uct(filho):
-        """Calcula a pontuação do filho usando as visitas do nó atual."""
+        """Calcula a pontuação UCT do filho.
+
+        @param filho: Nó candidato na seleção.
+        @return: Taxa de vitórias somada ao bônus de exploração.
+        """
         aproveitamento = filho.vitorias / filho.visitas
-        exploracao = c * math.sqrt(log_visitas / filho.visitas)
+        exploracao = peso_exploracao * math.sqrt(log_visitas / filho.visitas)
         return aproveitamento + exploracao
 
     no = raiz
@@ -31,6 +37,9 @@ def expandir(no):
     """Escolhe uma jogada não tentada, aplica-a numa cópia e cria um filho.
 
     Remove a jogada das opções por tentar e devolve o novo nó da árvore.
+
+    @param no: Nó com jogadas ainda não tentadas.
+    @return: Filho criado pela jogada escolhida.
     """
     jogada = no.nao_tentadas.pop(random.randrange(len(no.nao_tentadas)))
     proximo_estado = no.estado.copia()
@@ -45,6 +54,9 @@ def retropropagar(no, vencedor):
 
     Cada nó recebe uma visita; a vitória é contada apenas quando o vencedor
     é o jogador que fez a jogada que levou àquele nó.
+
+    @param no: Nó a partir do qual a atualização começa.
+    @param vencedor: Cor vencedora na simulação.
     """
     while no is not None:
         no.visitas += 1
@@ -53,7 +65,7 @@ def retropropagar(no, vencedor):
         no = no.pai
 
 
-def mcts(estado, segundos, c=1.4):
+def mcts(estado, segundos, peso_exploracao=1.4):
     """Busca uma jogada repetindo as quatro etapas do MCTS até acabar o tempo.
 
     1. Seleção: percorre a árvore com UCT até um nó expansível ou uma folha.
@@ -63,13 +75,18 @@ def mcts(estado, segundos, c=1.4):
 
     Executa ao menos uma simulação, mesmo com tempo zero. Ao final, devolve
     a jogada da raiz mais visitada, sua taxa de vitórias e o total de
-    simulações. `c` controla a exploração na etapa de seleção.
+    simulações. `peso_exploracao` controla a exploração na seleção.
+
+    @param estado: Estado inicial da busca.
+    @param segundos: Tempo disponível para as simulações.
+    @param peso_exploracao: Peso do bônus de exploração UCT (padrão: 1.4).
+    @return: Jogada escolhida, taxa de vitórias e número de simulações.
     """
     raiz = No(estado.copia())
     prazo = time.monotonic() + segundos
     simulacoes = 0
     while simulacoes < 1 or time.monotonic() < prazo:
-        no = selecionar(raiz, c)
+        no = selecionar(raiz, peso_exploracao)
         if no.nao_tentadas:
             no = expandir(no)
         vencedor = no.estado.copia().simular()
