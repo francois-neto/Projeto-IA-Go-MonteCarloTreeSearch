@@ -23,3 +23,7 @@ class No:
         self.visitas = 0
         self.vitorias = 0
         self.jogador_da_jogada = oponente(estado.vez)
+
+    def numero_de_visitas(self):
+        """Devolve quantas vezes este nó foi visitado na busca."""
+        return self.visitas
