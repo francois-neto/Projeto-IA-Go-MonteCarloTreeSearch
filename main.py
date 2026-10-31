@@ -1,64 +1,107 @@
-#!/usr/bin/env python3
-"""Go no terminal: você contra um bot Monte Carlo Tree Search (MCTS).
-
-Rode com: python3 main.py
-"""
-
 from src.go.rules import BRANCO, KOMI, PRETO, VAZIO
 from src.go.state import Estado
 from src.mcts.agent import mcts
 
-SIMBOLO = {VAZIO: "+", PRETO: "X", BRANCO: "O"}
-COLUNAS = "ABCDEFGHJ"  # no Go não se usa a letra I
+SIMBOLO_POR_COR = {VAZIO: "+", PRETO: "X", BRANCO: "O"}
+COLUNAS = "ABCDEFGHJ"
 TEMPO_POR_NIVEL = {"1": 0.5, "2": 2.0, "3": 6.0}
 
 
-def nome_ponto(p, n):
-    i, j = divmod(p, n)
-    return f"{COLUNAS[j]}{n - i}"
+def nome_ponto(ponto, tamanho):
+    """Converte o índice de uma interseção para uma coordenada como C3.
+
+    @param ponto: Índice da interseção no tabuleiro.
+    @param tamanho: Número de interseções por lado.
+    @return: Coordenada usada na interface.
+    """
+    coordenadas = divmod(ponto, tamanho)
+    linha = coordenadas[0]
+    coluna = coordenadas[1]
+    return f"{COLUNAS[coluna]}{tamanho - linha}"
 
 
-def ler_jogada(texto, n):
-    """Converte 'C3' em índice; devolve None se inválida."""
+def ler_jogada(texto, tamanho):
+    """Converte uma coordenada como C3 em índice.
+
+    @param texto: Coordenada digitada pelo jogador.
+    @param tamanho: Número de interseções por lado.
+    @return: Índice do ponto ou None se a entrada for inválida.
+    """
     texto = texto.strip().upper()
-    if len(texto) < 2 or texto[0] not in COLUNAS[:n] or not texto[1:].isdigit():
+    if len(texto) < 2 or texto[0] not in COLUNAS[:tamanho] or not texto[1:].isdigit():
         return None
     linha = int(texto[1:])
-    if not 1 <= linha <= n:
+    if not 1 <= linha <= tamanho:
         return None
-    return (n - linha) * n + COLUNAS.index(texto[0])
+    return (tamanho - linha) * tamanho + COLUNAS.index(texto[0])
 
 
-def desenhar(est):
-    n = est.n
-    cab = "    " + "   ".join(COLUNAS[:n])
-    print("\n" + cab)
-    for i in range(n):
-        celulas = [SIMBOLO[est.tab[i * n + j]] for j in range(n)]
-        print(f"{n - i:2}  " + "---".join(celulas) + f"  {n - i}")
-        if i < n - 1:
-            print("    " + "   ".join("|" * n))
-    print(cab)
+def desenhar(estado):
+    """Mostra as pedras nas interseções do tabuleiro.
+
+    @param estado: Estado da partida a exibir.
+    """
+    tamanho = estado.tamanho
+    cabecalho = "    " + "   ".join(COLUNAS[:tamanho])
+    print("\n" + cabecalho)
+    for linha in range(tamanho):
+        simbolos = [SIMBOLO_POR_COR[estado.tabuleiro[linha * tamanho + coluna]]
+                    for coluna in range(tamanho)]
+        print(f"{tamanho - linha:2}  " + "---".join(simbolos) + f"  {tamanho - linha}")
+        if linha < tamanho - 1:
+            print("    " + "   ".join("|" * tamanho))
+    print(cabecalho)
 
 
-def perguntar(texto, validos, padrao):
+def perguntar(texto, opcoes_validas, padrao):
+    """Repete a pergunta até receber uma opção válida.
+
+    @param texto: Pergunta exibida no terminal.
+    @param opcoes_validas: Respostas aceitas.
+    @param padrao: Resposta adotada quando a entrada está vazia.
+    @return: Opção escolhida.
+    """
     while True:
-        r = input(f"{texto} [{padrao}]: ").strip().upper() or padrao
-        if r in validos:
-            return r
+        resposta = input(f"{texto} [{padrao}]: ").strip().upper() or padrao
+        if resposta in opcoes_validas:
+            return resposta
         print("Opção inválida.")
 
 
-def mostrar_resultado(est, humano):
-    desenhar(est)
-    pedras, terr = est.pontuar()
-    pretos, brancos = est.placar()
+def mostrar_resultado(estado, cor_humana):
+    """Exibe o placar por área e o vencedor da partida.
+
+    @param estado: Estado final da partida.
+    @param cor_humana: Cor escolhida pelo jogador humano.
+    """
+    desenhar(estado)
+    contagens = estado.pontuar()
+    pedras = contagens[0]
+    territorio = contagens[1]
+    placar = estado.placar()
+    pontos_pretos = placar[0]
+    pontos_brancos = placar[1]
     print("\n=== Fim de jogo ===")
-    print(f"X (preto):  {pedras[PRETO]} pedras + {terr[PRETO]} de território = {pretos:g}")
-    print(f"O (branco): {pedras[BRANCO]} pedras + {terr[BRANCO]} de território"
-          f" + {est.komi:g} de komi = {brancos:g}")
-    venc = est.vencedor()
-    print(f"Vitória de {SIMBOLO[venc]}! " + ("Parabéns!" if venc == humano else "O bot levou essa."))
+    print(f"X (preto):  {pedras[PRETO]} pedras + {territorio[PRETO]} de território = {pontos_pretos:g}")
+    print(f"O (branco): {pedras[BRANCO]} pedras + {territorio[BRANCO]} de território"
+          f" + {estado.komi:g} de komi = {pontos_brancos:g}")
+    vencedor = estado.vencedor()
+    print(f"Vitória de {SIMBOLO_POR_COR[vencedor]}! "
+          + ("Parabéns!" if vencedor == cor_humana else "O bot levou essa."))
+
+
+def bot_deve_passar(estado):
+    """Encerra a partida se o humano passou e o bot já está ganhando.
+
+    @param estado: Estado da partida, com o bot na vez de jogar.
+    @return: True se passar encerra a partida com vitória do bot.
+    """
+    if estado.passes != 1:
+        return False
+    placar = estado.placar()
+    pontos_pretos = placar[0]
+    pontos_brancos = placar[1]
+    return (pontos_pretos > pontos_brancos) == (estado.vez == PRETO)
 
 
 def main():
@@ -67,55 +110,56 @@ def main():
     print("Contagem por área (pedras + território + komi para o branco).")
     print("Pedras mortas precisam ser capturadas antes de passar.\n")
 
-    n = int(perguntar("Tamanho do tabuleiro (5, 7 ou 9)", {"5", "7", "9"}, "5"))
-    cor = perguntar("Sua cor (X joga primeiro, O joga depois)", {"X", "O"}, "X")
+    tamanho = int(perguntar("Tamanho do tabuleiro (5, 7 ou 9)", {"5", "7", "9"}, "5"))
+    simbolo_humano = perguntar("Sua cor (X joga primeiro, O joga depois)", {"X", "O"}, "X")
     nivel = perguntar("Nível do bot (1 fácil, 2 médio, 3 difícil)", {"1", "2", "3"}, "2")
-    humano = PRETO if cor == "X" else BRANCO
-    tempo = TEMPO_POR_NIVEL[nivel]
+    cor_humana = PRETO if simbolo_humano == "X" else BRANCO
+    segundos_por_jogada = TEMPO_POR_NIVEL[nivel]
 
-    est = Estado(n, KOMI[n])
-    ultima = "—"
+    estado = Estado(tamanho, KOMI[tamanho])
+    ultima_jogada = "—"
 
-    while not est.terminal():
-        desenhar(est)
-        pretos, brancos = est.placar()
-        print(f"\nÚltima jogada: {ultima}")
-        print(f"Placar atual (área + komi): X {pretos:g} × O {brancos:g}")
+    while not estado.terminal():
+        desenhar(estado)
+        placar = estado.placar()
+        pontos_pretos = placar[0]
+        pontos_brancos = placar[1]
+        print(f"\nÚltima jogada: {ultima_jogada}")
+        print(f"Placar atual (área + komi): X {pontos_pretos:g} × O {pontos_brancos:g}")
 
-        if est.vez == humano:
-            entrada = input(f"Sua vez ({SIMBOLO[humano]}) - jogada (ex: C3), PASSO ou SAIR: ").strip().upper()
+        if estado.vez == cor_humana:
+            entrada = input(f"Sua vez ({SIMBOLO_POR_COR[cor_humana]}) - jogada (ex: C3), PASSO ou SAIR: ").strip().upper()
             if entrada == "SAIR":
                 print("Até a próxima!")
                 return
             if entrada == "PASSO":
-                est.jogar(None)
-                ultima = "você passou"
+                estado.jogar(None)
+                ultima_jogada = "você passou"
                 continue
-            p = ler_jogada(entrada, n)
-            if p is None:
-                print(f"Jogada inválida! Use coluna {COLUNAS[0]}-{COLUNAS[n - 1]} e linha 1-{n}, como C3.")
+            ponto = ler_jogada(entrada, tamanho)
+            if ponto is None:
+                print(f"Jogada inválida! Use coluna {COLUNAS[0]}-{COLUNAS[tamanho - 1]} e linha 1-{tamanho}, como C3.")
                 continue
-            motivo = est.jogar(p)
+            motivo = estado.jogar(ponto)
             if motivo:
                 print(f"Jogada ilegal: {motivo}.")
                 continue
-            ultima = f"você jogou {nome_ponto(p, n)}"
+            ultima_jogada = f"você jogou {nome_ponto(ponto, tamanho)}"
         else:
-            # Se o humano passou e o bot já está ganhando, passa e encerra.
-            if est.passes == 1:
-                pretos, brancos = est.placar()
-                bot_ganha = (pretos > brancos) == (est.vez == PRETO)
-                if bot_ganha:
-                    est.jogar(None)
-                    ultima = "o bot passou"
-                    continue
+            if bot_deve_passar(estado):
+                estado.jogar(None)
+                ultima_jogada = "o bot passou"
+                continue
             print("\nBot pensando...")
-            jogada, chance, sims = mcts(est, tempo)
-            est.jogar(jogada)
-            ultima = "o bot passou" if jogada is None else f"o bot jogou {nome_ponto(jogada, n)}"
-            print(f"({sims} simulações, chance de vitória estimada do bot: {chance:.0%})")
+            resultado = mcts(estado, segundos_por_jogada)
+            jogada = resultado[0]
+            chance_vitoria = resultado[1]
+            simulacoes = resultado[2]
+            estado.jogar(jogada)
+            ultima_jogada = "o bot passou" if jogada is None else f"o bot jogou {nome_ponto(jogada, tamanho)}"
+            print(f"({simulacoes} simulações, chance de vitória estimada do bot: {chance_vitoria:.0%})")
 
-    mostrar_resultado(est, humano)
+    mostrar_resultado(estado, cor_humana)
 
 
 if __name__ == "__main__":

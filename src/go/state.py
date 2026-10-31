@@ -1,5 +1,3 @@
-"""Estado de uma partida de Go e aplicação das jogadas."""
-
 import random
 
 from src.go.rules import (BRANCO, PRETO, VAZIO, grupo_e_liberdades,
@@ -7,123 +5,199 @@ from src.go.rules import (BRANCO, PRETO, VAZIO, grupo_e_liberdades,
 
 
 class Estado:
-    """Guarda o tabuleiro, a vez e o histórico necessário para validar ko."""
+    """Mantém o tabuleiro, a vez, os passes e as posições anteriores."""
 
-    def __init__(self, n, komi):
-        """Inicia um tabuleiro n × n; o preto começa e o komi favorece o branco."""
-        self.n = n
+    def __init__(self, tamanho, komi):
+        """Inicializa uma partida com o tamanho e o komi escolhidos.
+
+        @param tamanho: Número de interseções por lado do tabuleiro.
+        @param komi: Pontos extras concedidos às brancas.
+        """
+        self.tamanho = tamanho
         self.komi = komi
-        self.viz = vizinhos_do_tabuleiro(n)
-        self.tab = [VAZIO] * (n * n)
+        self._iniciar_partida()
+
+    def _iniciar_partida(self):
+        """Regra: as pretas começam e a posição inicial é vazia.
+
+        Implementação: cria o tabuleiro e registra a posição para o superko.
+        """
+        self.vizinhos = vizinhos_do_tabuleiro(self.tamanho)
+        self.tabuleiro = [VAZIO] * (self.tamanho * self.tamanho)
         self.vez = PRETO
         self.passes = 0
-        self.hist = {bytes(self.tab)}  # superko posicional
+        self.historico = {bytes(self.tabuleiro)}
 
     def copia(self):
-        """Copia tabuleiro e histórico para simular sem alterar a partida original."""
-        copia = Estado.__new__(Estado)
-        copia.n, copia.komi, copia.viz = self.n, self.komi, self.viz
-        copia.tab = self.tab[:]
-        copia.vez, copia.passes = self.vez, self.passes
-        copia.hist = set(self.hist)
-        return copia
+        """Copia tabuleiro e histórico para simular sem alterar a partida.
+
+        @return: Novo Estado independente da partida original.
+        """
+        novo_estado = Estado.__new__(Estado)
+        novo_estado.tamanho = self.tamanho
+        novo_estado.komi = self.komi
+        novo_estado.vizinhos = self.vizinhos
+        novo_estado.tabuleiro = self.tabuleiro[:]
+        novo_estado.vez = self.vez
+        novo_estado.passes = self.passes
+        novo_estado.historico = set(self.historico)
+        return novo_estado
 
     def terminal(self):
-        """A partida termina após dois passes consecutivos."""
+        """Regra: dois passes consecutivos encerram a partida.
+
+        Implementação: verifica a contagem de passes desde a última pedra.
+
+        @return: True se a partida terminou; caso contrário, False.
+        """
         return self.passes >= 2
 
-    def _tentar(self, ponto):
-        """Testa uma jogada sem alterar o estado.
+    def _preparar_jogada(self, ponto):
+        """Regra: não se joga sobre pedras, em suicídio nem repetindo posição.
 
-        Captura grupos adversários sem liberdades antes de verificar suicídio
-        e repetição de posição (superko). Devolve (novo tabuleiro, None) se
-        legal ou (None, motivo) se ilegal.
+        Implementação: simula a pedra em uma cópia, captura grupos sem
+        liberdades e verifica suicídio e superko. Devolve (tabuleiro, None)
+        se legal, ou (None, motivo) se ilegal.
+
+        @param ponto: Índice da interseção onde se quer jogar.
+        @return: (novo tabuleiro, None) se legal; (None, motivo) se ilegal.
         """
-        if self.tab[ponto] != VAZIO:
+        if self.tabuleiro[ponto] != VAZIO:
             return None, "posição ocupada"
         adversario = oponente(self.vez)
-        novo_tabuleiro = self.tab[:]
+        novo_tabuleiro = self.tabuleiro[:]
         novo_tabuleiro[ponto] = self.vez
-        for vizinho in self.viz[ponto]:
+        for vizinho in self.vizinhos[ponto]:
             if novo_tabuleiro[vizinho] == adversario:
-                grupo, liberdades = grupo_e_liberdades(novo_tabuleiro, vizinho, self.viz)
+                resultado_grupo = grupo_e_liberdades(novo_tabuleiro, vizinho, self.vizinhos)
+                grupo = resultado_grupo[0]
+                liberdades = resultado_grupo[1]
                 if not liberdades:
                     for pedra in grupo:
                         novo_tabuleiro[pedra] = VAZIO
-        _, liberdades = grupo_e_liberdades(novo_tabuleiro, ponto, self.viz)
+        liberdades = grupo_e_liberdades(novo_tabuleiro, ponto, self.vizinhos)[1]
         if not liberdades:
             return None, "suicídio (o grupo ficaria sem liberdades)"
-        if bytes(novo_tabuleiro) in self.hist:
+        if bytes(novo_tabuleiro) in self.historico:
             return None, "ko (repetiria uma posição anterior)"
         return novo_tabuleiro, None
 
-    def _aplicar(self, novo_tabuleiro):
-        """Confirma uma jogada legal, registra a posição e passa a vez."""
-        self.tab = novo_tabuleiro
-        self.hist.add(bytes(novo_tabuleiro))
+    def _confirmar_jogada(self, novo_tabuleiro):
+        """Regra: após jogar uma pedra, a vez muda e os passes são zerados.
+
+        Implementação: guarda o tabuleiro legal e sua posição para o superko.
+
+        @param novo_tabuleiro: Tabuleiro resultante de uma jogada legal.
+        """
+        self.tabuleiro = novo_tabuleiro
+        self.historico.add(bytes(novo_tabuleiro))
         self.passes = 0
         self.vez = oponente(self.vez)
 
-    def jogar(self, p):
-        """Joga no ponto `p` (ou passa com None); devolve motivo se ilegal."""
-        if p is None:
+    def jogar(self, ponto):
+        """Regra: a cada turno, o jogador coloca uma pedra legal ou passa.
+
+        Implementação: registra o passe ou confirma a jogada preparada;
+        devolve o motivo quando a jogada é ilegal.
+
+        @param ponto: Índice da interseção, ou None para passar.
+        @return: Motivo da ilegalidade, ou None se a jogada foi aceita.
+        """
+        if ponto is None:
             self.passes += 1
             self.vez = oponente(self.vez)
             return None
-        novo_tabuleiro, motivo = self._tentar(p)
+        resultado = self._preparar_jogada(ponto)
+        novo_tabuleiro = resultado[0]
+        motivo = resultado[1]
         if motivo:
             return motivo
-        self._aplicar(novo_tabuleiro)
+        self._confirmar_jogada(novo_tabuleiro)
         return None
 
     def jogadas_legais(self):
-        """Lista as jogadas permitidas, incluindo passar (None)."""
+        """Regra: pode-se passar ou colocar uma pedra em uma posição legal.
+
+        Implementação: testa cada interseção vazia sem alterar a partida.
+
+        @return: Lista de pontos legais, incluindo None para passar.
+        """
         jogadas = [None]
-        for ponto in range(len(self.tab)):
-            if self.tab[ponto] == VAZIO and self._tentar(ponto)[1] is None:
+        for ponto in range(len(self.tabuleiro)):
+            if self.tabuleiro[ponto] == VAZIO and self._preparar_jogada(ponto)[1] is None:
                 jogadas.append(ponto)
         return jogadas
 
-    def _olho_proprio(self, ponto, cor):
-        """Evita preencher pontos cercados por pedras da própria cor na simulação."""
-        return all(self.tab[vizinho] == cor for vizinho in self.viz[ponto])
+    def _cercado_pela_propria_cor(self, ponto):
+        """Estratégia da simulação: evita pontos cercados pela própria cor.
+
+        Implementação: verifica os vizinhos ortogonais do ponto.
+
+        @param ponto: Índice da interseção examinada.
+        @return: True se todos os vizinhos têm a cor do jogador da vez.
+        """
+        return all(self.tabuleiro[vizinho] == self.vez for vizinho in self.vizinhos[ponto])
 
     def simular(self):
-        """Joga em pontos vazios aleatórios até dois passes ou o limite de turnos.
+        """Estratégia do MCTS: completa a partida com jogadas aleatórias.
 
-        Ignora olhos próprios para evitar jogadas inúteis; ao terminar,
-        devolve o vencedor pela pontuação atual.
+        Implementação: evita pontos cercados pela própria cor, passa se não
+        puder jogar e termina após dois passes ou um limite de turnos.
+
+        @return: Cor vencedora ao fim da simulação.
         """
-        turnos_restantes = self.n * self.n * 2
+        turnos_restantes = self.tamanho * self.tamanho * 2
         while self.passes < 2 and turnos_restantes > 0:
             turnos_restantes -= 1
-            pontos_vazios = [ponto for ponto in range(len(self.tab)) if self.tab[ponto] == VAZIO]
+            pontos_vazios = [ponto for ponto in range(len(self.tabuleiro))
+                             if self.tabuleiro[ponto] == VAZIO]
             random.shuffle(pontos_vazios)
-            jogou = False
+            encontrou_jogada = False
             for ponto in pontos_vazios:
-                if self._olho_proprio(ponto, self.vez):
+                if self._cercado_pela_propria_cor(ponto):
                     continue
-                novo_tabuleiro, motivo = self._tentar(ponto)
+                resultado = self._preparar_jogada(ponto)
+                novo_tabuleiro = resultado[0]
+                motivo = resultado[1]
                 if motivo is None:
-                    self._aplicar(novo_tabuleiro)
-                    jogou = True
+                    self._confirmar_jogada(novo_tabuleiro)
+                    encontrou_jogada = True
                     break
-            if not jogou:
+            if not encontrou_jogada:
                 self.jogar(None)
         return self.vencedor()
 
     def pontuar(self):
-        """Devolve as contagens de pedras e de território por cor."""
-        return pontuar(self.tab, self.viz)
+        """Regra: a pontuação por área conta pedras e território.
+
+        Implementação: delega a contagem ao módulo de regras.
+
+        @return: Contagens de pedras e de território por cor.
+        """
+        return pontuar(self.tabuleiro, self.vizinhos)
 
     def placar(self):
-        """Soma pedras e território; adiciona o komi ao branco."""
-        pedras, territorio = self.pontuar()
-        pretos = pedras[PRETO] + territorio[PRETO]
-        brancos = pedras[BRANCO] + territorio[BRANCO] + self.komi
-        return pretos, brancos
+        """Regra: pedras e território pontuam; as brancas recebem komi.
+
+        Implementação: soma os valores de cada cor e acrescenta o komi.
+
+        @return: Pontos das pretas e das brancas, nessa ordem.
+        """
+        contagens = self.pontuar()
+        pedras = contagens[0]
+        territorio = contagens[1]
+        pontos_pretos = pedras[PRETO] + territorio[PRETO]
+        pontos_brancos = pedras[BRANCO] + territorio[BRANCO] + self.komi
+        return pontos_pretos, pontos_brancos
 
     def vencedor(self):
-        """Devolve a cor com mais pontos; em empate, vence o branco."""
-        pretos, brancos = self.placar()
-        return PRETO if pretos > brancos else BRANCO
+        """Regra: vence a cor com mais pontos; empate favorece as brancas.
+
+        Implementação: compara os dois valores do placar.
+
+        @return: PRETO ou BRANCO, conforme o resultado.
+        """
+        placar = self.placar()
+        pontos_pretos = placar[0]
+        pontos_brancos = placar[1]
+        return PRETO if pontos_pretos > pontos_brancos else BRANCO
