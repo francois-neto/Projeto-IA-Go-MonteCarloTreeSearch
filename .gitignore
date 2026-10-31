@@ -70,7 +70,10 @@ instance/
 .scrapy
 
 # Sphinx documentation
-docs/_build/
+#docs/_build/
+
+# Planejamento interno e notas de apoio (não são entregáveis versionados)
+#/docs/
 
 # PyBuilder
 .pybuilder/
