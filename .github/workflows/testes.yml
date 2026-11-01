@@ -1,0 +1,13 @@
+name: Testes
+
+on: push
+
+jobs:
+  test_jogo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - run: python -m unittest discover -s tests -p test_jogo.py
