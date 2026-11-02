@@ -65,8 +65,8 @@ def retropropagar(no, vencedor):
         no = no.pai
 
 
-def mcts(estado, segundos, peso_exploracao=1.4):
-    """Busca uma jogada repetindo as quatro etapas do MCTS até acabar o tempo.
+def mcts(estado, segundos=None, peso_exploracao=1.4, *, limite_simulacoes=None):
+    """Busca uma jogada por tempo ou por número fixo de simulações.
 
     1. Seleção: percorre a árvore com UCT até um nó expansível ou uma folha.
     2. Expansão: se houver jogadas não tentadas, acrescenta um filho.
@@ -78,14 +78,20 @@ def mcts(estado, segundos, peso_exploracao=1.4):
     simulações. `peso_exploracao` controla a exploração na seleção.
 
     @param estado: Estado inicial da busca.
-    @param segundos: Tempo disponível para as simulações.
+    @param segundos: Tempo disponível para as simulações, ou None se limitado por quantidade.
     @param peso_exploracao: Peso do bônus de exploração UCT (padrão: 1.4).
+    @param limite_simulacoes: Quantidade fixa de simulações, alternativa ao tempo.
     @return: Jogada escolhida, taxa de vitórias e número de simulações.
     """
+    if (segundos is None) == (limite_simulacoes is None):
+        raise ValueError("informe segundos ou limite_simulacoes, mas não ambos")
+    if limite_simulacoes is not None and limite_simulacoes < 1:
+        raise ValueError("limite_simulacoes deve ser positivo")
     raiz = No(estado.copia())
-    prazo = time.monotonic() + segundos
+    prazo = time.monotonic() + segundos if segundos is not None else None
     simulacoes = 0
-    while simulacoes < 1 or time.monotonic() < prazo:
+    while simulacoes < 1 or (simulacoes < limite_simulacoes if prazo is None
+                            else time.monotonic() < prazo):
         no = selecionar(raiz, peso_exploracao)
         if no.nao_tentadas:
             no = expandir(no)
