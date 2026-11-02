@@ -2,14 +2,27 @@
 
 import unittest
 
-from main import bot_deve_passar, ler_jogada, nome_ponto
+from main import bot_deve_passar
+from src.evaluation.competidor import Competidor
+from src.evaluation.arena import bot_deve_passar as passe_da_arena
 from src.go.rules import BRANCO, KOMI, PRETO, VAZIO
 from src.go.state import Estado
 from src.mcts.agent import mcts
 from src.mcts.node import No
+from src.utils.interface import ler_jogada, nome_ponto
 
 
 class JogoTest(unittest.TestCase):
+    def test_competidor_e_passe_compartilhado(self):
+        self.assertIs(bot_deve_passar, passe_da_arena)
+        estado = Estado(5, KOMI[5])
+        jogada, _, simulacoes = Competidor(3).escolher_jogada(estado)
+        self.assertIn(jogada, estado.jogadas_legais())
+        self.assertEqual(simulacoes, 3)
+        jogada_aleatoria, _, simulacoes_aleatorias = Competidor(None).escolher_jogada(estado)
+        self.assertIn(jogada_aleatoria, estado.jogadas_legais())
+        self.assertEqual(simulacoes_aleatorias, 0)
+
     def test_interface_e_passe_do_bot(self):
         self.assertEqual(ler_jogada(nome_ponto(12, 5), 5), 12)
         estado = Estado(5, 0.5)
