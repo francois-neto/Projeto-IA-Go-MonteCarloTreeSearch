@@ -79,14 +79,24 @@ def gerar_caminho_csv():
 
 
 if __name__ == "__main__":
-    agente_a = Competidor(qtd_simulacoes=1000)
-    agente_b = Competidor(qtd_simulacoes=1000)
-
-    controlador = ControladorExperimento(agente_a, agente_b, tamanho=5)
-    total_jogos = 5
-    caminho_csv = gerar_caminho_csv()
-    estatisticas = controlador.executar_torneio(
-        num_partidas=total_jogos,
-        caminho_csv=caminho_csv,
-    )
-    print("==TORNEIO FINALIZADO==")
+    total_jogos = 20
+    for simulacoes_a, simulacoes_b in (
+        (100, 500), (500, 1000), (100, 1000),
+        (1000, 10000), (500, 10000), (100, 10000),
+    ):
+        controlador = ControladorExperimento(
+            Competidor(qtd_simulacoes=simulacoes_a),
+            Competidor(qtd_simulacoes=simulacoes_b),
+            tamanho=5,
+        )
+        caminho_csv = gerar_caminho_csv()
+        print(f"\n== {simulacoes_a} vs. {simulacoes_b} simulações ==")
+        estatisticas = controlador.executar_torneio(
+            num_partidas=total_jogos,
+            caminho_csv=caminho_csv,
+        )
+        for nome, dados in estatisticas.items():
+            print(f"{nome}: {dados['vitorias']}/{total_jogos} vitórias "
+                  f"({dados['vitorias'] / total_jogos:.1%}); "
+                  f"preto: {dados['vitorias_preto']}, branco: {dados['vitorias_branco']}")
+        print(f"Resultados por partida: {caminho_csv}")
